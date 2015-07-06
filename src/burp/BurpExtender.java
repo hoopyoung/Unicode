@@ -1,13 +1,16 @@
 package burp;
 
 import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class BurpExtender implements IBurpExtender, IHttpListener, 
         IProxyListener, IScannerListener, IExtensionStateListener
 {
-    private IBurpExtenderCallbacks callbacks;
+    //private IBurpExtenderCallbacks callbacks;
     private PrintWriter stdout;
+    private IExtensionHelpers helper;
     
     //
     // implement IBurpExtender
@@ -17,10 +20,10 @@ public class BurpExtender implements IBurpExtender, IHttpListener,
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
     {
         // keep a reference to our callbacks object
-        this.callbacks = callbacks;
-        
+        //this.callbacks = callbacks;
+        helper = callbacks.getHelpers();
         // set our extension name
-        callbacks.setExtensionName("Chora Unicode Decode");
+        callbacks.setExtensionName("Chora[MS509] Unicode Decode");
         
         // obtain our output stream
         stdout = new PrintWriter(callbacks.getStdout(), true);
@@ -36,28 +39,61 @@ public class BurpExtender implements IBurpExtender, IHttpListener,
         
         // register ourselves as an extension state listener
         callbacks.registerExtensionStateListener(this);
+ 
     }
 
     //
     // implement IHttpListener
     //
-
+    
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo)
-    {
+    {    	
     	if(!messageIsRequest) {
     		try {
-				String oResponse = new String(messageInfo.getResponse(),"UTF-8");			
-	            char[] convtBuf=new char[2];  
-	            String nResponse = loadConvert(oResponse.toCharArray(),0,oResponse.length(),convtBuf);
-	            messageInfo.setResponse(nResponse.getBytes("UTF-8"));
-			} catch (UnsupportedEncodingException e) {
+    			byte[] oRes = messageInfo.getResponse();
+    			IResponseInfo hRes = helper.analyzeResponse(oRes);
+    			List<String> headers = hRes.getHeaders();
+    			String header = headers.toString();
+    			Matcher m = Pattern.compile("charset=(.*?),").matcher(header);//根据响应头判断编码
+    			String encode = null;
+    			if(m.find())
+    			{
+    				encode = m.group(1);
+    			}
+    			if (encode == null) {
+    				Matcher m2 = Pattern.compile("charset=(.*?)\"").matcher(new String(oRes));//根据网页内容判断编码
+        			if(m2.find())
+        			{
+        				encode = m2.group(1);
+        				if(encode.equals("gb2312"))
+        				{
+        					encode = "8859_1";
+        				}
+        			} else {
+        				encode = "UTF-8";
+        			}
+    			}
+    			String Res = new String(oRes,encode);
+    			messageInfo.setResponse(unicodeToString(Res).getBytes(encode));
+			} catch (Exception e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
-			}
+			}			
+			
     	}
     }
-
+    private String unicodeToString(String str)
+    {
+    	Pattern pattern = Pattern.compile("(\\\\u([a-fA-F0-9]{4}))"); 
+    	Matcher matcher = pattern.matcher(str);
+    	char ch;
+    	while (matcher.find()) {
+    		ch = (char) Integer.parseInt(matcher.group(2), 16);
+    		str = str.replace(matcher.group(1), ch + "");
+    	}
+    	return str;
+    }
     //
     // implement IProxyListener
     //
@@ -86,59 +122,4 @@ public class BurpExtender implements IBurpExtender, IHttpListener,
     {
         stdout.println("Extension was unloaded");
     }
-    
-    private String loadConvert (char[] in, int off, int len, char[] convtBuf) {  
-        if (convtBuf.length < len) {  
-            int newLen = len * 2;  
-            if (newLen < 0) {  
-            newLen = Integer.MAX_VALUE;  
-        }   
-        convtBuf = new char[newLen];  
-        }  
-        char aChar;  
-        char[] out = convtBuf;   
-        int outLen = 0;  
-        int end = off + len;  
-   
-        while (off < end) {  
-            aChar = in[off++];  
-            if (aChar == '\\') {  
-                aChar = in[off++];     
-                if(aChar == 'u') {  
-                    // Read the xxxx  
-                    int value=0;  
-            for (int i=0; i<4; i++) {  
-                aChar = in[off++];    
-                switch (aChar) {  
-                  case '0': case '1': case '2': case '3': case '4':  
-                  case '5': case '6': case '7': case '8': case '9':  
-                     value = (value << 4) + aChar - '0';  
-                 break;  
-              case 'a': case 'b': case 'c':  
-                          case 'd': case 'e': case 'f':  
-                 value = (value << 4) + 10 + aChar - 'a';  
-                 break;  
-              case 'A': case 'B': case 'C':  
-                          case 'D': case 'E': case 'F':  
-                 value = (value << 4) + 10 + aChar - 'A';  
-                 break;  
-              default:  
-                              throw new IllegalArgumentException(  
-                                           "Malformed \\uxxxx encoding.");  
-                        }  
-                     }  
-                    out[outLen++] = (char)value;  
-                } else {  
-                    if (aChar == 't') aChar = '\t';   
-                    else if (aChar == 'r') aChar = '\r';  
-                    else if (aChar == 'n') aChar = '\n';  
-                    else if (aChar == 'f') aChar = '\f';   
-                    out[outLen++] = aChar;  
-                }  
-            } else {  
-            out[outLen++] = (char)aChar;  
-            }  
-        }  
-        return new String (out, 0, outLen);  
-    }  
 }
