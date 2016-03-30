@@ -54,7 +54,14 @@ public class BurpExtender implements IBurpExtender, IHttpListener,
     			byte[] oRes = messageInfo.getResponse();
     			IResponseInfo hRes = helper.analyzeResponse(oRes);
     			List<String> headers = hRes.getHeaders();
+    			String mime =  hRes.getStatedMimeType();
     			String header = headers.toString();
+    			if(!mime.equalsIgnoreCase("GIF") 
+    					&& !mime.equalsIgnoreCase("PNG") 
+    					&& !mime.equalsIgnoreCase("JPG")
+    					&& !mime.equalsIgnoreCase("JPEG")
+    					&& !mime.equalsIgnoreCase("BMP")
+    					&& !mime.equalsIgnoreCase("IMAGE"))	{
     			Matcher m = Pattern.compile("charset=(.*?),").matcher(header);//根据响应头判断编码
     			String encode = null;
     			if(m.find())
@@ -76,6 +83,7 @@ public class BurpExtender implements IBurpExtender, IHttpListener,
     			}
     			String Res = new String(oRes,encode);
     			messageInfo.setResponse(unicodeToString(Res).getBytes(encode));
+    			}
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
